@@ -332,9 +332,10 @@ def test_jwe_tampering_fails_before_provider_work():
     provider_module.requests.request.assert_not_called()
 
 
-@pytest.mark.parametrize("provider,mode", [("telesign", "apiKey"), ("telesign", "oauth"), ("soprano", "oauth")])
+@pytest.mark.parametrize("provider", ["telesign", "soprano"])
 @pytest.mark.parametrize("legacy_channel", [None, "sms", "voice", "invalid"])
-def test_request_selects_either_channel_regardless_of_legacy_setting(monkeypatch, provider, mode, legacy_channel):
+def test_request_selects_either_channel_regardless_of_legacy_setting(monkeypatch, provider, legacy_channel):
+    mode = "apiKey" if provider == "telesign" else "oauth"
     monkeypatch.setenv("EPP_PROVIDER_NAME", provider)
     monkeypatch.setenv("EPP_PROVIDER_AUTH_MODE", mode)
     if legacy_channel is not None:
@@ -360,29 +361,6 @@ def test_request_selects_either_channel_regardless_of_legacy_setting(monkeypatch
         else:
             assert body["messageTypes"] == [channel_name]
     assert provider_module.requests.request.call_count == 4
-
-
-def test_telesign_oauth_startup_and_live_send_never_forward_inbound_credentials(monkeypatch):
-    monkeypatch.setenv("EPP_PROVIDER_NAME", "telesign")
-    function_app._warm_selected_credentials()
-    provider = function_app._credentials.get_credentials.call_args.args[0]
-    assert provider.authentication_mode == "oauth"
-    assert provider.credential_spec == {"mode": "oauth"}
-    provider_module.requests.request.assert_not_called()
-    provider_module.requests.request.return_value = Mock(
-        status_code=200, json=Mock(return_value={"status": {"code": 3001}}))
-    for channel in (1, 2):
-        response = _HANDLER(_request(
-            _envelope(channel=channel, tenantId="FORGED-TENANT"),
-            headers={"Authorization": "Bearer FORGED-CALLER"}))
-        assert response.status_code == 200
-        assert provider_module.requests.request.call_args.kwargs["headers"]["Authorization"] == "Bearer provider-token"
-    function_app._credentials.get_credentials.side_effect = ValueError("provider credential unavailable")
-    provider_module.requests.request.reset_mock()
-    response = _HANDLER(_request(_envelope()))
-    assert response.status_code == 502 and "nonce" not in json.loads(response.get_body())
-    provider_module.requests.request.assert_not_called()
-    assert _HANDLER(_request(_envelope(mode=2))).status_code == 200
 
 
 @pytest.mark.parametrize("provider,payload,sms_path,voice_path", [

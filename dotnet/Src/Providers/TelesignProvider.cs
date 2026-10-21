@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -19,24 +18,11 @@ public sealed class TelesignProvider : PhoneProviderBase
         @"(?<![0-9])[0-9]{6}(?![0-9])",
         RegexOptions.CultureInvariant);
     private readonly ISecretResolver? _secrets;
-    private readonly IEnv? _env;
-    private readonly OAuthTokenProvider _tokens;
 
-    public TelesignProvider(ISecretResolver? secrets = null, IEnv? env = null)
-        : this(secrets, env, new OAuthTokenProvider())
-    {
-    }
-
-    internal TelesignProvider(ISecretResolver? secrets, IEnv? env, OAuthTokenProvider tokens)
-    {
-        _secrets = secrets;
-        _env = env;
-        _tokens = tokens;
-    }
+    public TelesignProvider(ISecretResolver? secrets = null) => _secrets = secrets;
 
     public override string Name => "telesign";
-    public override string AuthenticationMode =>
-        _env?.Get("EPP_PROVIDER_AUTH_MODE")?.Trim() == "oauth" ? "oauth" : "apiKey";
+    public override string AuthenticationMode => "apiKey";
 
     public override Task<ProviderResult> SendOtpAsync(
         string channel, string endpoint, OtpDelivery delivery, ProviderCredentials credentials,
@@ -48,23 +34,15 @@ public sealed class TelesignProvider : PhoneProviderBase
             timeoutMs,
             logger);
 
-    private HttpRequestMessage CreateRequest(
+    private static HttpRequestMessage CreateRequest(
         string channel, string endpoint, OtpDelivery delivery, ProviderCredentials credential, IEnv env)
     {
         if (channel is not ("sms" or "voice")) throw new InvalidOperationException("unsupported channel");
         if (delivery.PhoneNumber is null || !Regex.IsMatch(delivery.PhoneNumber, @"\A\+[1-9][0-9]{1,14}\z"))
             throw new InvalidOperationException("invalid recipient");
 
-        if (credential.Mode != AuthenticationMode) throw CredentialTokenService.Unavailable();
-        var authorization = credential.Mode switch
-        {
-            "oauth" when !string.IsNullOrWhiteSpace(credential.AccessToken) =>
-                new AuthenticationHeaderValue("Bearer", credential.AccessToken),
-            "apiKey" when !string.IsNullOrWhiteSpace(credential.Identity) && !string.IsNullOrWhiteSpace(credential.Secret) =>
-                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(
-                    Encoding.UTF8.GetBytes($"{credential.Identity}:{credential.Secret}"))),
-            _ => throw CredentialTokenService.Unavailable(),
-        };
+        var authorization = "Basic " + Convert.ToBase64String(
+            Encoding.UTF8.GetBytes($"{credential.Identity}:{credential.Secret}"));
         var messageText = channel == "voice" ? BuildVoiceMessage(delivery.Message!) : delivery.Message;
         var body = new Request(
             new Recipient(delivery.PhoneNumber),
@@ -76,7 +54,7 @@ public sealed class TelesignProvider : PhoneProviderBase
         {
             Content = JsonContent.Create(body),
         };
-        request.Headers.Authorization = authorization;
+        request.Headers.TryAddWithoutValidation("Authorization", authorization);
         request.Headers.Accept.ParseAdd("application/json");
         return request;
     }
@@ -109,8 +87,6 @@ public sealed class TelesignProvider : PhoneProviderBase
     public override async Task<ProviderCredentials> FetchCredentialsAsync(
         AppConfig config, CancellationToken cancellationToken = default)
     {
-        if (AuthenticationMode == "oauth")
-            return await _tokens.FetchAsync(config, cancellationToken).ConfigureAwait(false);
         if (_secrets is null) throw CredentialTokenService.Unavailable();
         var key = _secrets.ResolveAsync("telesign-api-key", cancellationToken);
         var identity = _secrets.ResolveAsync("telesign-customer-id", cancellationToken);

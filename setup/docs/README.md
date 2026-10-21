@@ -446,9 +446,8 @@ configuration metadata, not provider credentials or private-key bytes. Keep it a
 |---|---|
 | `tenantId`, `subscriptionId`, `applicationId` | Verify the intended customer directory, Azure subscription, and endpoint **client ID**. |
 | `resources.functionApp`, `resources.keyVault`, `resources.applicationInsights`, `resources.logAnalytics` | Find the exact Azure resources; do not guess names or use a different environment's vault. |
-| `provider`, `endpointRegion`, `providerTenantId` | Confirm the provider route and Security Store tenant, separate from the customer's directory and Azure location. Both SMS and voice use this configuration. |
-| `accessTokenScopeTenant` | OAuth token-issuing tenant, matching `EPP_PROVIDER_TENANT_ID`. Can differ from `providerTenantId`; null for API-key deployments. |
-| `allowedProviderTenantIds` | Review the preserved allowlist, including the selected provider's Security Store tenant and OAuth token tenant. This does not enable runtime fallback between providers. |
+| `provider`, `endpointRegion`, `providerTenantId` | Confirm provider routing, separate from the customer's directory and Azure location. Both SMS and voice use this configuration. |
+| `allowedProviderTenantIds` | Review the complete preserved provider-tenant allowlist, including the selected provider. This does not enable runtime fallback between providers. |
 | `providerSmsEndpoint`, `providerVoiceEndpoint` | Confirm the distinct or identical provider URLs for SMS and voice. These are outbound provider URLs, not the Function's `endpointUrl`. |
 | `endpointUrl`, `identifierUri` | Exact SendOtp URL and registered app audience information for the authorized test/policy operator. |
 | `encryptionKeyId`, `certificateThumbprint`, `certificateId`, `certificateSecretId`, `certificateExpiresUtc` | Public-key identification and version/renewal inventory. A secret **ID** is not its value; do not fetch its private-key contents. |

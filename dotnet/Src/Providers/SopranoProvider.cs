@@ -1,4 +1,5 @@
 using Azure.Core;
+using Azure.Identity;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -20,13 +21,20 @@ public sealed class SopranoProvider : PhoneProviderBase
     private readonly Func<string, string, Func<CancellationToken, Task<string>>, TokenCredential> _createCredential;
     private (TokenCredential Credential, string Scope)? _credentials;
 
-    public SopranoProvider() => _tokens = new OAuthTokenProvider();
+    public SopranoProvider()
+        : this(
+            identity => new ManagedIdentityCredential(identity, OAuthOptions()),
+            (tenant, application, assertion) =>
+                new ClientAssertionCredential(tenant, application, assertion, OAuthOptions()))
+    {
+    }
 
     internal SopranoProvider(
         Func<string, TokenCredential> createIdentity,
         Func<string, string, Func<CancellationToken, Task<string>>, TokenCredential> createCredential)
     {
-        _tokens = new OAuthTokenProvider(createIdentity, createCredential);
+        _createIdentity = createIdentity;
+        _createCredential = createCredential;
     }
 
     public override string Name => "soprano";

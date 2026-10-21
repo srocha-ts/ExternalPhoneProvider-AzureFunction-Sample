@@ -25,15 +25,6 @@ const provider = Object.freeze({
             || !/^\+[1-9][0-9]{1,14}$/.test(delivery.phoneNumber)) {
             throw new Error('invalid recipient');
         }
-        if (credential.mode !== this.authenticationMode) throw new Error('provider credential unavailable');
-        let authorization;
-        if (credential.mode === 'oauth' && credential.accessToken?.trim()) {
-            authorization = `Bearer ${credential.accessToken}`;
-        } else if (credential.mode === 'apiKey' && credential.identity?.trim() && credential.secret?.trim()) {
-            authorization = `Basic ${Buffer.from(`${credential.identity}:${credential.secret}`).toString('base64')}`;
-        } else {
-            throw new Error('provider credential unavailable');
-        }
         const message = {
             text: channel === 'voice' ? buildVoiceMessage(delivery.message) : delivery.message,
         };
@@ -46,7 +37,7 @@ const provider = Object.freeze({
             url: endpoint,
             method: 'POST',
             headers: {
-                Authorization: authorization,
+                Authorization: `Basic ${Buffer.from(`${credential.identity}:${credential.secret}`).toString('base64')}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
@@ -87,11 +78,4 @@ const provider = Object.freeze({
     },
 });
 
-module.exports = Object.freeze({
-    ...provider,
-    oauth: Object.freeze({
-        ...provider,
-        authenticationMode: 'oauth',
-        credentialSpec: Object.freeze({ mode: 'oauth' }),
-    }),
-});
+module.exports = provider;
