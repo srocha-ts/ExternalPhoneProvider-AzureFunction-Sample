@@ -12,11 +12,7 @@ const { parseEntraPayload } = require('./entraPayload');
 const { OtpDelivery } = require('./delivery');
 const { decryptDeliveryContext } = require('./jwe');
 const { selectProvider } = require('./providers');
-const {
-    credentialTokenService,
-    reportRefreshFailure,
-    isCacheEnabled,
-} = require('./credentials');
+const { credentialTokenService } = require('./credentials');
 const {
     ProviderTransportError,
     isValidProviderUrl,
@@ -35,29 +31,7 @@ const {
     unexpectedError,
 } = require('./logging');
 
-async function startProviderCredentialRefresh() {
-    const config = readConfig();
-    if (!config.providerName) return;
-    const provider = selectProvider(config.providerName, config.providerAuthMode);
-    if (!provider || (config.providerAuthMode
-        && config.providerAuthMode !== provider.authenticationMode)) {
-        reportRefreshFailure('configuration');
-        return;
-    }
-    try {
-        if (!isCacheEnabled(provider.credentialSpec, config)) return;
-        await credentialTokenService.getCredentials(provider.credentialSpec, config);
-    } catch {
-        if (!credentialTokenService.current) reportRefreshFailure('configuration');
-    }
-}
-
-function stopProviderCredentialRefresh() {
-    credentialTokenService.close();
-}
-
-app.hook.appStart(startProviderCredentialRefresh);
-app.hook.appTerminate(stopProviderCredentialRefresh);
+app.hook.appTerminate(() => credentialTokenService.close());
 
 app.http('SendOtp', {
     methods: ['POST'],
@@ -215,10 +189,12 @@ app.http('SendOtp', {
             const delivery = new OtpDelivery({
                 phoneNumber: decrypted.delivery.phoneNumber,
                 message: decrypted.delivery.message,
+                otp: decrypted.delivery.otp,
                 channel,
                 messageId: msRequestId || requestId,
                 correlationId,
                 locale: decrypted.delivery.locale,
+                riskContext: decrypted.delivery.riskContext,
             });
             let providerRequest;
             try {
@@ -299,5 +275,3 @@ app.http('SendOtp', {
         }
     },
 });
-
-module.exports = { startProviderCredentialRefresh, stopProviderCredentialRefresh };

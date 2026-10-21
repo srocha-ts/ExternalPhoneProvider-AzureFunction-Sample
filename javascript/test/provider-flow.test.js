@@ -20,6 +20,7 @@ const { createRequestContext } = require('../src/functions/logging');
 const delivery = new OtpDelivery({
     phoneNumber: '+15551234567',
     message: '  Your code is 001234; ref 1234567; alternate 654321.\n',
+    otp: '001234',
     channel: 'sms',
     messageId: 'message-id',
     correlationId: 'correlation-id',
@@ -75,6 +76,36 @@ test('validated Entra payload and delivery models preserve content', () => {
     for (const value of [null, [], 'text', 1]) assert.equal(DeliveryContext.fromPayload(value), null);
 });
 
+test('delivery models preserve optional OTP strings without coercion or message extraction', () => {
+    for (const fields of [{}, { otp: null }, { otp: '' }, { otp: '001234' }, { otp: '000000' }]) {
+        const context = DeliveryContext.fromPayload({
+            nonce: 'nonce',
+            phoneNumber: delivery.phoneNumber,
+            message: delivery.message,
+            ...fields,
+        });
+        assert.ok(context.isComplete);
+        assert.equal(context.otp, fields.otp);
+        assert.equal(context.message, delivery.message);
+        const request = new OtpDelivery({ ...delivery, otp: context.otp });
+        assert.equal(request.otp, fields.otp);
+        assert.equal(inspect(context), '[DeliveryContext]');
+        assert.equal(inspect(request), '[OtpDelivery]');
+    }
+});
+
+test('delivery models retain arbitrary risk dictionaries without inspecting their fields', () => {
+    for (const { overrides } of fixtures.riskContexts) {
+        const context = DeliveryContext.fromPayload({ ...delivery, nonce: 'nonce', ...overrides });
+        assert.ok(context.isComplete);
+        assert.deepEqual(context.riskContext, overrides.riskContext);
+        const request = new OtpDelivery({ ...delivery, riskContext: context.riskContext });
+        assert.deepEqual(request.riskContext, overrides.riskContext);
+        assert.equal(inspect(context), '[DeliveryContext]');
+        assert.equal(inspect(request), '[OtpDelivery]');
+    }
+});
+
 test('payload validation preserves exact shared reasons and order', () => {
     for (const fixture of fixtures.badRequests) {
         if (fixture.reason === 'invalid JSON body') continue;
@@ -84,6 +115,49 @@ test('payload validation preserves exact shared reasons and order', () => {
         assert.equal(parseEntraPayload(value).error, fixture.reason, fixture.name);
     }
 });
+
+test('payload enums preserve numeric values and case-insensitive supported names', () => {
+    for (const [channel, expectedChannel, channelName] of [
+        [1, 1, 'sms'], ['sms', 1, 'sms'], ['SMS', 1, 'sms'], ['sMs', 1, 'sms'],
+        [2, 2, 'voice'], ['voice', 2, 'voice'], ['VOICE', 2, 'voice'], ['VoIcE', 2, 'voice'],
+    ]) {
+        for (const [mode, expectedMode] of [
+            [1, 1], ['live', 1], ['LIVE', 1], ['LiVe', 1],
+            [2, 2], ['evaluation', 2], ['EVALUATION', 2], ['EvAlUaTiOn', 2],
+        ]) {
+            const parsed = parseEntraPayload(envelope({ channel, mode }));
+            assert.equal(parsed.error, undefined);
+            assert.deepEqual([
+                parsed.payload.channel, parsed.payload.mode,
+                parsed.payload.channelName, parsed.payload.isEvaluation,
+            ], [expectedChannel, expectedMode, channelName, expectedMode === 2],
+            JSON.stringify({ channel, mode }));
+        }
+    }
+});
+
+for (const field of ['channel', 'mode']) {
+    for (const value of [
+        'constructor', '__proto__', 'CONSTRUCTOR', '__PROTO__',
+        'toString', 'valueOf', 'hasOwnProperty', 'unsupported',
+    ]) {
+        test(`payload ${field} rejects unsupported enum name ${value}`, () => {
+            assert.deepEqual(parseEntraPayload(envelope({ [field]: value })),
+                { error: `unsupported ${field}` });
+        });
+    }
+
+    test(`payload ${field} rejects invalid enum values without coercion`, () => {
+        for (const value of [
+            undefined, null, true, false, 0, -1, 3, 1.5, {}, [], ['sms'], ['evaluation'],
+            '', '1', '2', ' sms', 'sms ', ' voice', 'voice ',
+            ' live', 'live ', ' evaluation', 'evaluation ',
+        ]) {
+            assert.deepEqual(parseEntraPayload(envelope({ [field]: value })),
+                { error: `unsupported ${field}` }, JSON.stringify(value));
+        }
+    });
+}
 
 test('provider URLs and timeout parsing preserve safety boundaries and cap', () => {
     for (const url of ['http://provider.example', 'https://@provider.example', 'https://provider.example#',

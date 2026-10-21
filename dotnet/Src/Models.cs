@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Epp.Otp;
@@ -24,14 +25,18 @@ public sealed record OtpDelivery(
     string Channel,
     string MessageId,
     string? CorrelationId,
-    string? Locale);
+    string? Locale,
+    string? Otp = null,
+    Dictionary<string, JsonElement>? RiskContext = null)
+{
+    public override string ToString() => nameof(OtpDelivery);
+}
 
 public sealed record ProviderCredentials(
     string Mode,
     string? Secret = null,
     string? Identity = null,
-    [property: JsonIgnore] string? AccessToken = null,
-    [property: JsonIgnore] DateTimeOffset ExpiresOn = default)
+    [property: JsonIgnore] string? AccessToken = null)
 {
     public override string ToString() => nameof(ProviderCredentials);
 }

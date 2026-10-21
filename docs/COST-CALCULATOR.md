@@ -1,26 +1,34 @@
-# Estimate SMS provider costs
+# Estimate telecom-provider and Azure hosting costs
 
-Use this guide to create a planning estimate for SMS traffic before onboarding an
-External Phone Provider (EPP). The report finds SMS and voice authentication steps in
-recent sign-in activity and groups them by the phone number's international calling
-code, such as `+1` or `+91`. Apply your provider's destination rates to the report to
-estimate a budget.
+Estimate SMS and voice traffic before onboarding a provider. The report groups recent
+authentication steps by calling code. Apply provider rates to estimate a telecom budget.
+This guide also describes the Azure resources to include when
+estimating the separate cost of hosting the provider integration.
 
-**This is an estimate, not a usage or billing report.** A sign-in does not prove that
-the provider accepted or delivered an SMS or voice call. Authentication details can
-contain multiple SMS or voice steps for one sign-in, so this guide counts each matching
-step as one estimated request. Actual provider billing can differ because of retries,
-fallback, failures, message segmentation, and provider-specific charging rules. Confirm
-the assumptions, supported destinations, taxes, fees, and final pricing with your provider.
+The guide separates the estimate into two parts:
 
-The `authenticationDetails` data used by this guide is currently available through the
+1. Telecom-provider costs based on estimated SMS and voice requests.
+2. Azure hosting costs for running and monitoring the provider integration.
+
+## 1. Estimate telecom-provider costs
+
+> [!IMPORTANT]
+> This is not a billing report. Confirm retries, fallback, message segments, destinations, taxes,
+> fees, and pricing with the provider.
+
+| Step | Task |
+| --- | --- |
+| 1 | [Prepare access](#prerequisites) |
+| 2 | [Generate the report](#generate-the-activity-report) |
+| 3 | [Calculate the estimate](#convert-activity-into-a-cost-estimate) |
+| 4 | [Confirm provider rates](#confirm-provider-rates) |
+
+The report uses `authenticationDetails`, which is currently available through the
 [Microsoft Graph beta API](https://learn.microsoft.com/en-us/graph/api/resources/authenticationdetail?view=graph-rest-beta).
-Beta APIs are subject to change and are not supported for production applications. Review
-and test this reporting script before each planning exercise. Because sign-in details mask
-phone numbers, the script matches their visible trailing digits to the user's registered
-phone authentication methods and derives the calling code from the matched registration.
+Review the beta API and script before each planning exercise. The script matches masked trailing
+digits to registered phone methods to derive the calling code.
 
-## Prerequisites
+### Prerequisites
 
 Run the script in PowerShell 7 from a secured administrator workstation. The signed-in
 account must be allowed to consent to or use these Microsoft Graph delegated permissions:
@@ -28,28 +36,20 @@ account must be allowed to consent to or use these Microsoft Graph delegated per
 - `AuditLog.Read.All`
 - `UserAuthenticationMethod.Read.All`
 
-Reading other users' phone methods also requires a
-[supported Entra role](https://learn.microsoft.com/en-us/graph/api/authentication-list-phonemethods?view=graph-rest-1.0#permissions),
-not just consent to those scopes. Authentication Administrator receives masked phone numbers;
-if the calling code is unavailable, the script reports `Unknown`. Confirm approved read access
-with your identity administrator rather than granting broader roles just to fill the report.
+Reading other users' phone methods requires a
+[supported Microsoft Entra ID role](https://learn.microsoft.com/en-us/graph/api/authentication-list-phonemethods?view=graph-rest-1.0#permissions).
+Authentication Administrators receive masked phone numbers. Unresolved calling codes appear as `Unknown`.
 
-Access to sign-in logs also depends on your Microsoft Entra licensing, directory role,
-and log-retention period. Review the requested permissions before consenting. The script
-processes sign-in authentication details that can include phone numbers. It exports only
-aggregated calling codes, methods, and counts, not full phone numbers. Store, share, and
-delete the output according to your organization's privacy and retention requirements.
+Access also depends on Microsoft Entra ID licensing, roles, and retention. The script exports
+aggregated calling codes, methods, and counts, not full phone numbers. Protect the output.
 
 Create `C:\temp` before running the script, or change the `Export-Csv` path to an
 approved folder.
 
-## Generate the activity report
+### Generate the activity report
 
-The following sample installs the required Microsoft Graph modules for the current user,
-connects to Microsoft Graph, identifies SMS and voice authentication steps, and matches
-each masked phone detail to a registered phone method. It caches phone-method lookups so
-each user is queried only once. Replace `$start` and `$end` with the period you want to
-analyze.
+The script installs the required modules, finds SMS and voice authentication steps, matches masked
+details to registered phone methods, and groups the result. Set `$start` and `$end` first.
 
 ```powershell
 # 1. Install required modules if they are missing
@@ -164,28 +164,16 @@ $report | Format-Table -AutoSize
 $report | Export-Csv -Path "C:\temp\SMS_Voice_SignIns_By_Calling_Code.csv" -NoTypeInformation
 ```
 
-Microsoft documents `SMS` and `Voice` as authentication method values and states that
-`authenticationMethodDetail` can contain the phone number for those methods. Some tenant
-sign-in results report SMS as `Text message`; the script accepts both values and normalizes
-them to `SMS` in the exported report. It does not use the cmdlet's `-Property` parameter,
-because `authenticationDetails` is returned on the beta sign-in objects without that
-selection and the parameter has not behaved consistently across module versions.
+The script accepts `SMS`, `Text message`, and `Voice`, then normalizes text messages to `SMS`.
 
-The phone detail can be masked, for example `+x XXXXXXXX90`. The script removes non-digits
-from that detail and matches the visible suffix (`90`) against the user's registered
-methods. It then extracts the calling code from the uniquely matched registered number,
-whose Graph format includes a space after the code, such as `+91 1234567890`.
+For a masked value such as `+x XXXXXXXX90`, the script matches the visible suffix to one registered
+method and extracts its calling code.
 
-For SMS, only `mobile` and `alternateMobile` registrations are considered; voice can use
-any registered phone type. A row is grouped as `Unknown` when the masked detail exposes
-fewer than two digits, no registered number matches, more than one registered number has
-the same visible suffix, or the matched number has an unexpected format. This avoids
-guessing a destination. Review the `Unknown` total before relying on the estimate.
+SMS uses `mobile` and `alternateMobile` registrations. Voice can use any phone type. The report
+uses `Unknown` rather than guessing when it cannot find one match. Review that total.
 
-The script does not use sign-in geography. `-All` requests all available pages, but large
-tenants should still account for Microsoft Graph throttling and execution time. The script
-uses `-ErrorAction Stop` rather than silently producing a partial report when either
-sign-in or phone-method retrieval fails.
+The script does not use sign-in geography. Large tenants should account for Microsoft Graph
+throttling and execution time. Errors stop the report instead of returning partial results.
 
 The Microsoft Graph
 [list signIns API documentation](https://learn.microsoft.com/en-us/graph/api/signin-list?view=graph-rest-1.0&tabs=http)
@@ -194,7 +182,7 @@ recent sign-ins are returned first. Only sign-in events that occurred within the
 Microsoft Entra ID default retention period are available."** Selecting an earlier
 `$start` date does not make events outside the available retention period accessible.
 
-## Convert activity into a cost estimate
+### Convert activity into a cost estimate
 
 The exported report contains one row per calling code and authentication method. It counts
 each SMS or voice authentication step as one estimated request:
@@ -216,9 +204,10 @@ Apply the provider's destination-specific rates to those estimated requests. Use
 rows when rates differ by destination, sender type, route, or message category. Include a
 contingency for growth, retries, fallback behavior, and seasonal peaks.
 
-## Confirm the final estimate with your provider
+<a id="confirm-the-final-estimate-with-your-provider"></a>
+### Confirm provider rates
 
-Work with your provider to validate:
+Confirm the following with the provider:
 
 - How each international calling code maps to the provider's destination pricing.
 - Country and carrier coverage, sender registration, and route-specific rates.
@@ -230,3 +219,98 @@ Work with your provider to validate:
 After deployment, compare the estimate with provider billing and approved operational
 telemetry. Do not treat this report as proof of message submission, acceptance, delivery,
 or the amount that the provider will invoice.
+
+## 2. Estimate Azure hosting costs
+
+Telecom-provider charges and Azure hosting charges are separate. Estimate the Azure
+resources required to receive an authentication request, call the provider, and return
+the result. Use the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/)
+to confirm current prices for your deployment region and agreement. Prices, free grants,
+and service capabilities can change, so do not use an old estimate as an approved budget.
+
+### Get a quick planning estimate
+
+If you need a rough estimate rather than a detailed calculation, select the deployment
+profile that meets your availability requirements and use the closest monthly request
+volume in the following table.
+
+| Deployment profile | 50,000 requests/month | 1 million requests/month | 10 million requests/month |
+| --- | ---: | ---: | ---: |
+| Flex Consumption on demand | Less than $1 | About $21 | About $303 |
+| Flex Consumption with one Always Ready instance | About $22 | About $43 | About $326 |
+| Zone-redundant Flex Consumption | About $43 | About $64 | About $347 |
+| Premium EP1 | About $158 | About $163 | About $290 |
+| Zone-redundant Premium EP1 | About $473 | About $478 | About $606 |
+| Two-region, zone-redundant Flex Consumption | About $86 | About $105 | About $380 |
+
+These illustrative monthly estimates use East US retail assumptions in USD, 2 GB of
+Function memory, a 0.5-second average execution, 5 KB of operational logging per request,
+and a 5% retry allowance. They assume applicable free grants are available and exclude
+telecom-provider charges, taxes, support plans, and customer-specific discounts. Actual
+costs can vary by region, agreement, traffic pattern, telemetry retention, and service
+pricing.
+
+Use the table for early planning only. For an approved budget, enter your expected volume
+and required deployment profile in the Azure Pricing Calculator. If your volume falls
+between columns, use the next higher column for a conservative estimate; do not scale the
+table values linearly because some profiles include fixed baseline capacity.
+
+### Build a detailed estimate
+
+Include these resources:
+
+| Azure resource | Use in the provider integration | Primary cost drivers |
+| --- | --- | --- |
+| Azure Functions hosting | Runs the routing function that validates the request, applies your policies, calls the provider, and returns the result. | Hosting plan, authentication volume, execution duration, memory, Always Ready instances, Premium instances, and deployment regions. |
+| Function App | Hosts the application and its HTTPS endpoint. | There is no separate base charge; compute is charged through the selected Functions hosting plan. |
+| Application Insights and Log Analytics | Provides operational monitoring, request diagnostics, provider latency, failure data, and troubleshooting telemetry. | Telemetry volume and retention. |
+| Storage account | Stores Function host information and the deployment package. | Stored capacity, transactions, and LRS versus ZRS replication. Zone-redundant deployments require ZRS storage. |
+| Key Vault | Protects provider credentials, secrets, and the encryption certificate. | Secret and certificate operations. This is normally a small cost because credentials are cached. |
+| Outbound bandwidth | Carries API requests and responses between Azure Functions and the provider. | Outbound data after the applicable Azure allowance. This is usually small for provider API payloads. |
+| Traffic Manager or equivalent global routing | Routes traffic in an optional multi-region disaster-recovery deployment. | DNS queries or requests, depending on the selected routing service. |
+
+Collect these inputs before creating your estimate:
+
+- Monthly SMS and voice authentication requests, including authentication, enrollment,
+  recovery, and test traffic.
+- Average Function execution duration, including provider API latency.
+- Expected retry and failover allowance.
+- Function memory allocation and operational logging generated per request.
+- Required region, availability-zone resilience, and regional disaster recovery.
+- Your Azure pricing, discounts, free grants, taxes, and currency.
+
+Use adjusted request volume consistently across the estimate:
+
+```text
+Adjusted monthly requests = monthly authentication requests x retry/failover multiplier
+Execution GB-seconds      = adjusted monthly requests x execution seconds x memory in GB
+Monitoring data in GB     = adjusted monthly requests x logging KB per request / 1,048,576
+Estimated Azure total     = Functions + monitoring + storage + Key Vault
+                            + outbound bandwidth + optional global routing
+```
+
+Apply the current service rates and free grants from the Azure Pricing Calculator rather
+than embedding fixed rates in the estimate. Employee count is not a suitable substitute
+for request volume. Peak traffic determines required capacity, while monthly request
+volume, execution duration, and telemetry volume drive much of the consumption cost.
+
+Compare the deployment profiles that meet your latency and resiliency requirements:
+
+| Deployment profile | When to consider it |
+| --- | --- |
+| Flex Consumption on demand | Pilot, evaluation, intermittent use, or production only after cold-start latency is validated. |
+| Flex Consumption with Always Ready | Standard production when low authentication latency is required. |
+| Zone-redundant Flex Consumption | Production authentication that must continue through an availability-zone failure. Budget for the minimum required Always Ready instances and ZRS storage. |
+| Premium | Continuously allocated capacity or Premium-specific capabilities. Validate the required instance count. |
+| Zone-redundant Premium | Mission-critical Premium deployment. Confirm the minimum instance count enforced by the selected deployment method. |
+| Two-region deployment | Recovery from a complete Azure-region outage. Include a second deployment, global routing, replicated configuration, and recovery testing. |
+
+Select a profile from latency and resiliency requirements, not organization size alone.
+The total authentication response budget includes Function startup, integration
+processing, provider latency, retries, and response handling. Always Ready reduces only
+the Function cold-start portion. Zone redundancy protects against a datacenter-zone
+failure within one region; it does not provide regional disaster recovery.
+
+For a multi-region design, also account for globally unique idempotency, provider-aware
+failover, shared fraud and spend limits, and an emergency stop. Autoscaling Azure compute
+must not create unlimited telecom spend.
