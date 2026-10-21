@@ -130,7 +130,7 @@ app.http('SendOtp', {
                 });
             }
 
-            const provider = selectProvider(config.providerName);
+            const provider = selectProvider(config.providerName, config.providerAuthMode);
             if (!provider) {
                 fail('provider_selection', 'unknown_provider', 400);
                 return respond(400, { error: 'provider_delivery_failed', correlationId, requestId });

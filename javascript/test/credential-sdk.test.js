@@ -10,6 +10,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const pipeline = require('@azure/core-rest-pipeline');
 const { createHttpHeaders } = pipeline;
 const { readConfig } = require('../src/functions/config');
+const { selectProvider } = require('../src/functions/providers');
 
 let state;
 const originalLoad = Module._load;
@@ -52,7 +53,7 @@ beforeEach(() => {
                 assert.ok(url.pathname.endsWith('/oauth2/v2.0/token'));
                 current.tokenCalls++;
             }
-            const call = { managedIdentity, aborted: false, completed: false };
+            const call = { managedIdentity, url: request.url, body: request.body, aborted: false, completed: false };
             current.requests.push(call);
             try {
                 await delay(managedIdentity ? current.miWait : current.wait, null, { signal: request.abortSignal });
